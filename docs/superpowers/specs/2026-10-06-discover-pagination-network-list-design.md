@@ -34,22 +34,71 @@ Two independent gaps were identified in `api/v2.0.0/beckn.yaml`:
 
 ## 2. Design: Discover Pagination
 
-### 2.1 Request — `DiscoverAction`
+### 2.0 Shared `PaginationParams` (reuse, not duplication)
 
-Add two new optional top-level fields, consistent with the existing
-precedent in `CatalogSearchAction`/`CatalogPullAction`:
+The existing `Pagination` schema (response metadata: `total`/`limit`/`offset`)
+is not a fit to `$ref` directly into a request, since `total` is
+server-assigned output and makes no sense as caller input. Rather than
+hand-duplicating `limit`/`offset` a third time (they were already duplicated
+between `Pagination` and the deprecated `CatalogSearchAction`), a new shared
+`PaginationParams` schema holds just `limit`/`offset`:
 
 ```yaml
-limit:
-  type: integer
-  description: Maximum number of catalogs to return in this page. If omitted, server applies a default.
-  minimum: 1
-  maximum: 100
-offset:
-  type: integer
-  description: Number of matching catalogs to skip before collecting results, for pagination.
-  minimum: 0
-  default: 0
+PaginationParams:
+  type: object
+  description: >-
+    Reusable offset-based pagination fields shared between paginated
+    list requests and the Pagination response metadata that describes
+    them.
+  properties:
+    limit:
+      type: integer
+      minimum: 1
+      maximum: 100
+      description: Maximum number of records in this page.
+    offset:
+      type: integer
+      minimum: 0
+      default: 0
+      description: Zero-based index of the first record in this page.
+```
+
+`Pagination` is refactored to build on it (non-breaking — same resulting
+JSON shape for existing consumers of the deprecated `/catalog/search` and
+`/catalog/subscription` endpoints):
+
+```yaml
+Pagination:
+  description: ... # unchanged
+  allOf:
+    - $ref: '#/components/schemas/PaginationParams'
+    - type: object
+      properties:
+        total:
+          type: integer
+          minimum: 0
+          description: Total number of matching records across the entire result set.
+```
+
+The deprecated `CatalogSearchAction`/`CatalogPullAction` request schemas are
+left untouched — they keep their own inline `limit`/`offset` (with a
+`default: 20` specific to that endpoint), per §4 Out of Scope.
+
+### 2.1 Request — `DiscoverAction`
+
+Add `limit`/`offset` properties that `$ref` the individual property
+definitions in `PaginationParams`, keeping the flat top-level request shape
+while fully reusing the shared constraints/description (no `allOf`, so no
+interaction with `DiscoverAction`'s existing `additionalProperties: false`):
+
+```yaml
+properties:
+  intent:
+    $ref: '#/components/schemas/Intent'
+  limit:
+    $ref: '#/components/schemas/PaginationParams/properties/limit'
+  offset:
+    $ref: '#/components/schemas/PaginationParams/properties/offset'
 ```
 
 ### 2.2 Response — `OnDiscoverAction`
@@ -140,7 +189,10 @@ schemas and `Context.networkId` keeps its existing name.
 ## 4. Out of Scope
 
 - Changing the deprecated `/catalog/search` and `/catalog/subscription`
-  endpoints or their existing `Pagination` usage.
+  endpoints' request schemas or behavior. (Note: `Pagination`'s *internal*
+  structure was refactored to build on the new shared `PaginationParams`,
+  per §2.0 — this is a non-breaking, shape-preserving change; these
+  endpoints' request schemas and response shape are unaffected.)
 - Cursor-based pagination (offset/limit was chosen for consistency with
   existing precedent in this spec; see Open Questions).
 - Renaming or consolidating `Context.networkId` with the unrelated

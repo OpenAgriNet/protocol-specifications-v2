@@ -2291,19 +2291,9 @@ components:
         intent:
           $ref: '#/components/schemas/Intent'
         limit:
-          type: integer
-          minimum: 1
-          maximum: 100
-          description: >-
-            Maximum number of catalogs to return in this page. If omitted,
-            the DS applies a default.
+          $ref: '#/components/schemas/PaginationParams/properties/limit'
         offset:
-          type: integer
-          minimum: 0
-          default: 0
-          description: >-
-            Number of matching catalogs to skip before collecting results,
-            for pagination.
+          $ref: '#/components/schemas/PaginationParams/properties/offset'
       additionalProperties: false
       required:
       - intent
@@ -4526,8 +4516,32 @@ components:
             ISO 8601 timestamp set by the CS each time the subscription record
             is modified.
 
-    Pagination:
+    PaginationParams:
       type: object
+      description: >-
+        Reusable offset-based pagination fields shared between paginated
+        list requests and the Pagination response metadata that describes
+        them. On a request, limit/offset specify the caller's desired page;
+        on a response, they reflect the page actually applied by the server.
+      properties:
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: >-
+            Maximum number of records in this page. On a request, the
+            caller's desired page size; if omitted, the server applies a
+            default. On a response, the page size actually applied.
+        offset:
+          type: integer
+          minimum: 0
+          default: 0
+          description: >-
+            Zero-based index of the first record in this page relative to
+            the full result set. On a request, specifies where to start;
+            on a response, reflects the offset actually applied.
+
+    Pagination:
       description: "Metadata accompanying a paginated list response that describes\
         \ the size, position, and count of the returned result set, enabling callers\
         \ to navigate through large result sets using offset-based pagination.\n\n\
@@ -4536,26 +4550,16 @@ components:
         \ or PN consumes it to determine whether additional pages are available and\
         \ to construct subsequent requests.\n\nRelationship: Composed within the response\
         \ message objects of /catalog/subscription and /catalog/search endpoints."
-      properties:
-        total:
-          type: integer
-          minimum: 0
-          description: >-
-            Total number of matching records across the entire result set,
-            not the count in this page. Assigned by the CS.
-        limit:
-          type: integer
-          minimum: 1
-          description: >-
-            Maximum number of records returned in this page. Assigned by
-            the CS based on the request parameter or CS policy.
-        offset:
-          type: integer
-          minimum: 0
-          description: >-
-            Zero-based index of the first record in this page relative to
-            the full result set. Assigned by the CS based on the request
-            parameter.
+      allOf:
+      - $ref: '#/components/schemas/PaginationParams'
+      - type: object
+        properties:
+          total:
+            type: integer
+            minimum: 0
+            description: >-
+              Total number of matching records across the entire result
+              set, not the count in this page. Assigned by the CS.
 
     CatalogSearchAction:
       type: object
