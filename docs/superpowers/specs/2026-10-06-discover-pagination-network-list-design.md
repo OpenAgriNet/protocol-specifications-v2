@@ -4,6 +4,7 @@
 **Date:** 2026-10-06
 **Scope file:** `api/v2.0.0/beckn.yaml`
 **Branch:** `feature/discover-pagination-network-list`
+**Merge target:** `release-0.2.0` (not `main` — see the RFC gate below)
 
 > This is a lightweight internal design spec, not a conformant Beckn RFC. A
 > full RFC satisfying `docs/RFC_Authoring_Guide.md` (Document Details,
@@ -12,10 +13,14 @@
 > is deferred as a follow-up task and MUST be authored before this change can
 > be considered for merge into `main`, per this repo's process (an RFC is a
 > required companion artifact for any protocol change, not optional).
+>
+> This change targets `release-0.2.0`, so the gate is not yet tripped — but
+> the RFC MUST land before `release-0.2.0` is promoted to `main`.
 
 ## 1. Problem Statement
 
-Two independent gaps were identified in `api/v2.0.0/beckn.yaml`:
+Two independent gaps were identified in `api/v2.0.0/beckn.yaml` (line
+references below are to the file as it stood *before* this change):
 
 1. **No pagination on `/discover`.** `OnDiscoverAction` (the response schema
    for `/on_discover`, lines 2356-2379) returns a flat `catalogs` array with
@@ -38,10 +43,13 @@ Two independent gaps were identified in `api/v2.0.0/beckn.yaml`:
 
 The existing `Pagination` schema (response metadata: `total`/`limit`/`offset`)
 is not a fit to `$ref` directly into a request, since `total` is
-server-assigned output and makes no sense as caller input. Rather than
-hand-duplicating `limit`/`offset` a third time (they were already duplicated
-between `Pagination` and the deprecated `CatalogSearchAction`), a new shared
-`PaginationParams` schema holds just `limit`/`offset`:
+server-assigned output and makes no sense as caller input.
+
+`limit`/`offset` are currently hand-declared in **five** places: `Pagination`,
+the deprecated `CatalogSearchAction` and `CatalogPullAction` request schemas,
+and the `limit`/`offset` query parameters on `/catalog/subscription`. Rather
+than making `/discover` a sixth, a new shared `PaginationParams` schema holds
+just `limit`/`offset`:
 
 ```yaml
 PaginationParams:
@@ -59,13 +67,18 @@ PaginationParams:
     offset:
       type: integer
       minimum: 0
-      default: 0
       description: Zero-based index of the first record in this page.
 ```
 
-`Pagination` is refactored to build on it (non-breaking — same resulting
-JSON shape for existing consumers of the deprecated `/catalog/search` and
-`/catalog/subscription` endpoints):
+`default: 0` is deliberately **not** in the shared base: `default` is a
+request-side annotation, and on server-assigned response metadata it would be
+meaningless. `DiscoverAction` re-declares it as a `$ref` sibling (§2.1), which
+is valid in OpenAPI 3.1.1 / JSON Schema 2020-12.
+
+`Pagination` is refactored to build on it. The resulting JSON *shape* is
+identical for existing consumers of the deprecated `/catalog/search` and
+`/catalog/subscription` endpoints, with one deliberate constraint change
+noted below:
 
 ```yaml
 Pagination:
@@ -79,6 +92,21 @@ Pagination:
           minimum: 0
           description: Total number of matching records across the entire result set.
 ```
+
+**Constraint delta on `Pagination` (the one non-cosmetic effect):**
+
+| field | before | after |
+|---|---|---|
+| `total` | `minimum: 0` | unchanged |
+| `limit` | `minimum: 1`, no maximum | `minimum: 1`, **`maximum: 100`** |
+| `offset` | `minimum: 0` | unchanged |
+
+The added `maximum: 100` on the *response* `limit` is a tightening, not a
+pure refactor: a CS that reported `limit: 200` in a response would have
+validated before and will not now. This is intentional and consistent — all
+three request paths already cap `limit` at 100, so no conforming server can
+legitimately report a page size above it. Called out here so the change is
+not mistaken for a no-op.
 
 The deprecated `CatalogSearchAction`/`CatalogPullAction` request schemas are
 left untouched — they keep their own inline `limit`/`offset` (with a
@@ -99,7 +127,13 @@ properties:
     $ref: '#/components/schemas/PaginationParams/properties/limit'
   offset:
     $ref: '#/components/schemas/PaginationParams/properties/offset'
+    default: 0
 ```
+
+The `default: 0` sibling alongside `$ref` is valid in OpenAPI 3.1.1 (JSON
+Schema 2020-12 treats `$ref` as an ordinary keyword, so adjacent keywords
+apply); it keeps the request-side default on the request schema without
+leaking it into `Pagination`.
 
 ### 2.2 Response — `OnDiscoverAction`
 
@@ -151,12 +185,15 @@ networkId:
     the first entry, treating it as the primary network, and MAY fall back
     to subsequent entries if resolution against the primary fails.
   oneOf:
-    - type: string
-    - type: array
-      items:
-        type: string
-      minItems: 1
+  - type: string
+  - type: array
+    items:
+      type: string
+    minItems: 1
 ```
+
+(List items sit at the parent key's column, matching the indentation style
+used throughout `beckn.yaml`.)
 
 ### 3.2 List semantics
 
@@ -191,8 +228,9 @@ schemas and `Context.networkId` keeps its existing name.
 - Changing the deprecated `/catalog/search` and `/catalog/subscription`
   endpoints' request schemas or behavior. (Note: `Pagination`'s *internal*
   structure was refactored to build on the new shared `PaginationParams`,
-  per §2.0 — this is a non-breaking, shape-preserving change; these
-  endpoints' request schemas and response shape are unaffected.)
+  per §2.0. Their request schemas and the response JSON shape are
+  unaffected; the single effective change is the added `maximum: 100` on
+  the response `limit`, tabulated in §2.0.)
 - Cursor-based pagination (offset/limit was chosen for consistency with
   existing precedent in this spec; see Open Questions).
 - Renaming or consolidating `Context.networkId` with the unrelated
@@ -210,13 +248,23 @@ schemas and `Context.networkId` keeps its existing name.
    confusion with `Context.networkId`, even though no functional collision
    exists today? Deferred — out of scope per §4.
 
-## 6. Validation Plan
+## 6. Validation
 
-- Lint `api/v2.0.0/beckn.yaml` with the repo's existing OpenAPI validation
-  tooling (e.g. `@redocly/cli lint`) after edits.
-- Add/update example payloads for `DiscoverAction` (with `limit`/`offset`),
-  `OnDiscoverAction` (with `pagination`), and `Context` (with array-form
-  `networkId`), and validate each against the updated schema.
-- Confirm existing examples using string-form `networkId` and
-  `DiscoverAction`/`OnDiscoverAction` without pagination fields still
-  validate unchanged.
+This repository has no committed OpenAPI lint tooling — there is no
+`package.json`, `Makefile`, or CI workflow — so validation was performed
+directly against the schema rather than via `@redocly/cli`. Anyone adding
+lint tooling later should wire these same checks into it.
+
+Performed, all passing:
+
+- [x] `api/v2.0.0/beckn.yaml` parses as valid YAML and the `Pagination` /
+      `PaginationParams` / `DiscoverAction` schemas resolve as intended.
+- [x] Example payloads added and validated against their request schemas
+      (JSON Schema 2020-12):
+      - `/discover` → `paginatedDiscover` (string `networkId` + `limit`/`offset`)
+      - `/discover` → `multiNetworkDiscover` (array-form `networkId`)
+      - `/on_discover` → `paginatedOnDiscover` (response `pagination` metadata)
+- [x] Regression sweep: all 8 examples in the file (5 pre-existing + 3 new)
+      validate against their schemas, confirming existing string-form
+      `networkId` payloads and pagination-free `DiscoverAction` /
+      `OnDiscoverAction` payloads are unaffected.
