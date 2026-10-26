@@ -168,7 +168,7 @@ paths:
                   $ref: '#/components/schemas/DiscoverAction'
             examples:
               paginatedDiscover:
-                summary: Request the second page of results (limit/offset)
+                summary: Second page of results, counted in resources (limit/offset)
                 value:
                   context:
                     version: '2.0.0'
@@ -182,8 +182,8 @@ paths:
                   message:
                     intent:
                       textSearch: premium laptop
-                    limit: 20
-                    offset: 20
+                    limit: 3
+                    offset: 3
               multiNetworkDiscover:
                 summary: Discover across two subnets using the array form of networkId
                 value:
@@ -258,7 +258,9 @@ paths:
                   $ref: '#/components/schemas/OnDiscoverAction'
             examples:
               paginatedOnDiscover:
-                summary: Return one page of catalogs with pagination metadata
+                summary: Second page of a result set paginated by resource. The
+                  three resources span two catalogs, and CAT-TECHMART-2026
+                  continues from the previous page.
                 value:
                   context:
                     version: '2.0.0'
@@ -281,13 +283,27 @@ paths:
                         descriptor:
                           name: TechMart Electronics
                       resources:
-                      - id: ITEM-LAPTOP-001
+                      - id: ITEM-LAPTOP-004
                         descriptor:
-                          name: Premium Laptop Pro
+                          name: Premium Laptop Pro 14
+                      - id: ITEM-LAPTOP-005
+                        descriptor:
+                          name: Premium Laptop Pro 16
+                    - id: CAT-GADGETHUB-2026
+                      descriptor:
+                        name: GadgetHub Catalog
+                      provider:
+                        id: provider-gadgethub-002
+                        descriptor:
+                          name: GadgetHub
+                      resources:
+                      - id: ITEM-LAPTOP-006
+                        descriptor:
+                          name: Premium Laptop Air
                     pagination:
                       total: 137
-                      limit: 20
-                      offset: 20
+                      limit: 3
+                      offset: 3
       responses:
         '200':
           $ref: '#/components/responses/Ack'
@@ -2363,15 +2379,17 @@ components:
           minimum: 1
           maximum: 100
           description: >-
-            Maximum number of catalogs the DS SHOULD return per
-            on_discover page. If omitted, the DS applies its own default.
+            Maximum number of resources the DS SHOULD return in the
+            on_discover page, summed across the catalogs array. If omitted,
+            the DS applies its own default.
         offset:
           type: integer
           minimum: 0
           default: 0
           description: >-
-            Zero-based index, relative to the full result set, of the
-            first catalog the DS SHOULD return.
+            Zero-based index, relative to the DS's full aggregated result
+            set, of the first resource the DS SHOULD return. Counted in
+            resources, not catalogs.
       additionalProperties: false
       required:
       - intent
@@ -2458,7 +2476,7 @@ components:
           items:
             $ref: '#/components/schemas/Catalog'
         pagination:
-          $ref: '#/components/schemas/Pagination'
+          $ref: '#/components/schemas/DiscoverPagination'
       additionalProperties: false
 
     OnInitAction:
@@ -4593,6 +4611,40 @@ components:
           description: >-
             ISO 8601 timestamp set by the CS each time the subscription record
             is modified.
+
+    DiscoverPagination:
+      type: object
+      description: "Pagination metadata accompanying an /on_discover callback,\
+        \ describing the window of results returned relative to the DS's full\
+        \ aggregated result set for the discovery intent.\n\nThe unit of pagination\
+        \ is the resource, not the catalog: total, limit, and offset all count\
+        \ entries of Catalog.resources summed across the catalogs array. A single\
+        \ Catalog MAY therefore be split across consecutive pages, repeating its\
+        \ id, provider, and bppId on each page while carrying a different subset\
+        \ of its resources.\n\nProduced by the DS; consumed by the CN to determine\
+        \ whether further pages exist and to construct the next /discover request.\
+        \ Distinct from Pagination, which is produced by the CS for the deprecated\
+        \ /catalog/search and /catalog/subscription endpoints."
+      properties:
+        total:
+          type: integer
+          minimum: 0
+          description: >-
+            Total number of resources matching the intent across the DS's
+            entire aggregated result set, not the count in this page.
+        limit:
+          type: integer
+          minimum: 1
+          description: >-
+            Number of resources in this page, summed across the catalogs
+            array. Reflects the page size actually applied by the DS, which
+            MAY differ from the limit requested by the CN.
+        offset:
+          type: integer
+          minimum: 0
+          description: >-
+            Zero-based index of the first resource in this page relative to
+            the DS's full aggregated result set.
 
     Pagination:
       type: object
