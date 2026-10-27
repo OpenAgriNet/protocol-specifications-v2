@@ -2377,11 +2377,13 @@ components:
         limit:
           type: integer
           minimum: 1
-          maximum: 100
           description: >-
             Maximum number of resources the DS SHOULD return in the
             on_discover page, summed across the catalogs array. If omitted,
-            the DS applies its own default.
+            the DS applies its own default. No ceiling is fixed here because
+            the maximum page size is DS policy; a DS clamps an oversize
+            limit to its own maximum and reports the applied value in
+            pagination.limit.
         offset:
           type: integer
           minimum: 0
@@ -4630,8 +4632,12 @@ components:
           type: integer
           minimum: 0
           description: >-
-            Total number of resources matching the intent across the DS's
-            entire aggregated result set, not the count in this page.
+            Number of resources reachable by paging, not the count in this
+            page. This is the count of matches the DS retained, which MAY be
+            capped at its retrieval depth: a DS that stops ranking after N
+            candidates reports at most N, because no page beyond that can be
+            fetched. A CN MUST therefore treat total as the end of what is
+            pageable and MUST NOT present it as an absolute match count.
         limit:
           type: integer
           minimum: 1
@@ -4645,6 +4651,11 @@ components:
           description: >-
             Zero-based index of the first resource in this page relative to
             the DS's full aggregated result set.
+      required:
+      - total
+      - limit
+      - offset
+      additionalProperties: false
 
     Pagination:
       type: object
