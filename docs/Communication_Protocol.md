@@ -455,6 +455,7 @@ sequenceDiagram
 | CON-013-30 | A DS MUST order one result set deterministically for a given intent, so that `offset` slices a settled ranking. Two pages from the same result set MUST NOT repeat or skip a resource. Across requests the DS re-aggregates, so a CN MUST tolerate repeats and omissions and MUST NOT treat pages as a snapshot. | MUST |
 | CON-013-31 | A DS MUST clamp a `limit` above its maximum page size rather than refusing it, and MUST report the applied value in `pagination.limit`. A CN MUST read that value back before computing its next `offset`. | MUST |
 | CON-013-32 | When `pagination` is present it MUST carry `total`, `limit`, and `offset`. A DS that cannot report them MUST omit `pagination` entirely rather than send a partial object. | MUST |
+| CON-013-33 | `pagination.limit` MUST report the page size the DS applied, not the number of resources in the page. A last page carrying fewer resources than `limit` MUST NOT reduce `limit` to match. A CN determines the resources returned by counting the `catalogs` array, and has reached the end of the results when `offset` plus that count equals `total`. | MUST |
 
 ### Cross-cutting Considerations
 
@@ -562,7 +563,7 @@ Any message in this table can be associated with the full session using `transac
 
 This RFC establishes the normative rules for message-level communication on a Beckn-enabled fabric. Implementations that conform to this RFC will correctly handle the two-step request–callback pattern, the stateless state-declaration model, message correlation and session scoping via `messageId` and `transactionId`, PN-initiated callbacks, multicast discovery and parallel value chains, and cascaded network compositions. These rules apply uniformly to AI Agents and conventional software clients alike.
 
-Advancement of this RFC to Candidate status requires at least two independent implementations demonstrating conformance with CON-013-01 through CON-013-32, with particular attention to the PN callback obligation (CON-013-03), PN-initiated callback authentication (CON-013-14), multicast `messageId` assignment (CON-013-19), UUID format requirements (CON-013-21 and CON-013-22), and DS aggregation (CON-013-24).
+Advancement of this RFC to Candidate status requires at least two independent implementations demonstrating conformance with CON-013-01 through CON-013-33, with particular attention to the PN callback obligation (CON-013-03), PN-initiated callback authentication (CON-013-14), multicast `messageId` assignment (CON-013-19), UUID format requirements (CON-013-21 and CON-013-22), and DS aggregation (CON-013-24).
 
 ## Frequently Asked Questions
 

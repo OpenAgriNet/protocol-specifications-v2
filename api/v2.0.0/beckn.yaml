@@ -4642,9 +4642,13 @@ components:
           type: integer
           minimum: 1
           description: >-
-            Number of resources in this page, summed across the catalogs
-            array. Reflects the page size actually applied by the DS, which
-            MAY differ from the limit requested by the CN.
+            Page size the DS actually applied, which MAY differ from the
+            limit the CN requested because the DS clamped it. This is a
+            ceiling, not a count: the last page carries fewer resources
+            than limit, and limit does not shrink to match. A CN that
+            wants the number of resources returned counts the catalogs
+            array; it has reached the end of the results when offset plus
+            that count equals total.
         offset:
           type: integer
           minimum: 0
