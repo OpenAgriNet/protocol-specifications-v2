@@ -338,6 +338,12 @@ sequenceDiagram
 
 **Paginated responses.** If the aggregated catalog is large, the DS MAY send multiple `on_discover` callbacks for the single `discover` request, each carrying the same `messageId`. The CN MUST treat each arriving `on_discover` as an additional page of the same result set (consistent with the multiple-callbacks pattern in §9) and MUST NOT discard later pages.
 
+**Caller-requested pages.** A CN MAY bound the result set by supplying `limit` and `offset` in the `discover` message. Pagination is counted in **resources, not catalogs**: `limit`, `offset`, and the returned `pagination.total` all count entries of `Catalog.resources` summed across the `catalogs` array. `offset` is zero-based against the DS's full aggregated result set for the intent. A DS MAY therefore split a single catalog across consecutive pages, repeating its `id`, `provider`, and `bppId` on each page while carrying a different subset of its resources; a CN MUST NOT assume a catalog is wholly contained in one page. When the CN supplies either field, the DS MUST return that single window in exactly one `on_discover` response — one callback, or one synchronous body where the profile answers `/discover` directly — and MUST NOT use the multiple-callback form above — otherwise the CN's offset arithmetic is undefined. The DS SHOULD report `message.pagination` (`total`/`limit`/`offset`) so the CN can fetch the next page by reissuing `discover` with the same intent and an advanced `offset` under a new `messageId`. Within one result set the DS MUST apply a total order that is deterministic for a given intent, so that `offset` **slices** a settled ranking rather than re-ranking per request; two pages taken from the same result set MUST NOT repeat or skip a resource. Across requests that guarantee does not hold — the DS re-aggregates PN responses every time, and the corpus moves — so a CN walking pages MUST tolerate a resource that appears twice or not at all, and MUST NOT treat page boundaries as a consistent snapshot.
+
+A DS MUST clamp a `limit` above its own maximum page size rather than refusing the request, and MUST report the applied value in `pagination.limit`. The schema fixes no ceiling because the maximum is DS policy; a CN that sent a larger `limit` MUST read the applied value back before computing its next `offset`, or it will skip results.
+
+`pagination` MUST carry `total`, `limit`, and `offset` whenever it is present. A DS that cannot report them omits the `pagination` object entirely rather than sending a partial one, so a CN can always tell a paginated answer from an unpaginated one.
+
 **CN calling PNs directly.** A CN is not required to use a DS. A CN MAY call individual PNs directly using the parallel multicast pattern (see §10.2), treating each PN as an independent discover target and aggregating responses at the CN. This is appropriate when the CN already knows which PNs to query.
 
 - The DS MUST use the same `transactionId` from the CN's `discover` request when fanning out to PNs.
@@ -442,6 +448,14 @@ sequenceDiagram
 | CON-013-23 | A message sender SHOULD treat the combination of `context.messageId` and its outgoing request signature as the unique deduplication key for long-term message deduplication. | SHOULD |
 | CON-013-24 | A DS MUST aggregate all PN responses and static catalog data before sending `on_discover` to the CN. Direct forwarding of PN `on_discover` responses to the CN MUST NOT be implemented. | MUST |
 | CON-013-25 | A DS MAY send multiple paginated `on_discover` callbacks for a single `discover` request. The CN MUST NOT discard later pages. | MAY |
+| CON-013-26 | When a CN supplies `limit` or `offset` in a `discover` message, the DS MUST return the requested window in exactly one `on_discover` response and MUST NOT send multiple paginated callbacks for that request. | MUST |
+| CON-013-27 | `offset` in a `discover` message is zero-based and relative to the DS's full aggregated result set for the supplied intent. A CN MUST tolerate overlap or omission across pages, since the DS re-aggregates per request. | MUST |
+| CON-013-28 | `/discover` pagination MUST be counted in resources, not catalogs: `limit`, `offset`, and `pagination.total` all count entries of `Catalog.resources` summed across the `catalogs` array. | MUST |
+| CON-013-29 | A DS MAY split a single catalog across consecutive pages, repeating its `id`, `provider`, and `bppId` with a different `resources` subset. A CN MUST NOT assume a catalog is wholly contained in one page. | MAY |
+| CON-013-30 | A DS MUST order one result set deterministically for a given intent, so that `offset` slices a settled ranking. Two pages from the same result set MUST NOT repeat or skip a resource. Across requests the DS re-aggregates, so a CN MUST tolerate repeats and omissions and MUST NOT treat pages as a snapshot. | MUST |
+| CON-013-31 | A DS MUST clamp a `limit` above its maximum page size rather than refusing it, and MUST report the applied value in `pagination.limit`. A CN MUST read that value back before computing its next `offset`. | MUST |
+| CON-013-32 | When `pagination` is present it MUST carry `total`, `limit`, and `offset`. A DS that cannot report them MUST omit `pagination` entirely rather than send a partial object. | MUST |
+| CON-013-33 | `pagination.limit` MUST report the page size the DS applied, not the number of resources in the page. A last page carrying fewer resources than `limit` MUST NOT reduce `limit` to match. A CN determines the resources returned by counting the `catalogs` array, and has reached the end of the results when `offset` plus that count equals `total`. | MUST |
 
 ### Cross-cutting Considerations
 
@@ -549,7 +563,7 @@ Any message in this table can be associated with the full session using `transac
 
 This RFC establishes the normative rules for message-level communication on a Beckn-enabled fabric. Implementations that conform to this RFC will correctly handle the two-step request–callback pattern, the stateless state-declaration model, message correlation and session scoping via `messageId` and `transactionId`, PN-initiated callbacks, multicast discovery and parallel value chains, and cascaded network compositions. These rules apply uniformly to AI Agents and conventional software clients alike.
 
-Advancement of this RFC to Candidate status requires at least two independent implementations demonstrating conformance with CON-013-01 through CON-013-25, with particular attention to the PN callback obligation (CON-013-03), PN-initiated callback authentication (CON-013-14), multicast `messageId` assignment (CON-013-19), UUID format requirements (CON-013-21 and CON-013-22), and DS aggregation (CON-013-24).
+Advancement of this RFC to Candidate status requires at least two independent implementations demonstrating conformance with CON-013-01 through CON-013-33, with particular attention to the PN callback obligation (CON-013-03), PN-initiated callback authentication (CON-013-14), multicast `messageId` assignment (CON-013-19), UUID format requirements (CON-013-21 and CON-013-22), and DS aggregation (CON-013-24).
 
 ## Frequently Asked Questions
 
@@ -567,7 +581,7 @@ No. Network operators have no role in `transactionId` management. All Beckn comm
 
 **Q: In a discovery multicast, should the DS forward individual PN responses directly to the CN, or aggregate them first?**
 
-The DS MUST aggregate all responses — from static catalog data and from dynamic PN callbacks — before sending `on_discover` to the CN (CON-013-24). Direct forwarding of PN `on_discover` responses to the CN was the Beckn v1 BG pattern and is deprecated in Beckn v2. If the aggregated catalog is large, the DS MAY send it in multiple paginated `on_discover` callbacks, each carrying the same `messageId` as the original `discover` request (CON-013-25). A CN that does not want to use a DS MAY call PNs directly using the parallel multicast pattern and aggregate responses itself.
+The DS MUST aggregate all responses — from static catalog data and from dynamic PN callbacks — before sending `on_discover` to the CN (CON-013-24). Direct forwarding of PN `on_discover` responses to the CN was the Beckn v1 BG pattern and is deprecated in Beckn v2. If the aggregated catalog is large, the DS MAY send it in multiple paginated `on_discover` callbacks, each carrying the same `messageId` as the original `discover` request (CON-013-25) — unless the CN bounded the result set with `limit`/`offset`, in which case the DS MUST return that single window in exactly one response (CON-013-26). A CN that does not want to use a DS MAY call PNs directly using the parallel multicast pattern and aggregate responses itself.
 
 ---
 
