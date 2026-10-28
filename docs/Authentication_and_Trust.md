@@ -406,6 +406,8 @@ Before sending any Beckn request or callback, the sending NP SHOULD verify that 
 
 When both the sending and receiving NP are members of the same subnet (i.e. they share the same `networkId` registered with the same NFO), the sending NP SHOULD perform a `subscriber_reference` registry lookup for the receiving NP's entry on that network's NFO-managed registry **immediately before** dispatching the message. The NFO may have revoked the receiving NP's participation since the last interaction, and a revoked NP MUST NOT be called.
 
+Where `context.networkId` carries the array form, the two NPs are members of the same subnet if their `networkId` values share at least one entry. The sending NP MUST perform the lookup against the registry of the first shared entry in the sender's own ordering, and MUST NOT treat a non-shared entry as grounds to skip the lookup.
+
 If the receiving NP's `subscriber_reference` record is absent or shows a revoked status, the sending NP MUST NOT send the message and MUST treat the condition as a configuration or trust error rather than a transient failure.
 
 ##### 9.2 Key Expiry Check Before Callbacks
